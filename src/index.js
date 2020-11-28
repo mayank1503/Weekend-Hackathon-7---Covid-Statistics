@@ -46,10 +46,11 @@ app.get('/hotspotStates', (req, res) => {
         let recovered = k['recovered'];
         let diff = Number(infected) - Number(recovered);
         diff = (diff / Number(infected));
-        diff = diff.toFixed(5);
+        //diff = diff.toFixed(5);
+        
         console.log(diff);
         if (diff > 0.1) {
-            dead.push({ state: k['state'], rate: diff });
+            dead.push({ state: k['state'], rate: { $round : [ diff, 5 ] } });
         }
     }
     res.json({ data: dead });
