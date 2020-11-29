@@ -1,120 +1,175 @@
-const express = require("express");
-const mongoose = require("mongoose");
-//const { connection } = require("./connector");
-const app = express();
+const express = require('express')
+const app = express()
 const bodyParser = require("body-parser");
-const port = 8080;
+const port = 8080
 
 // Parse JSON bodies (as sent by API clients)
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-const { connection } = require("./connector");
-app.get("/totalRecovered", (req, res) => {
-  let totalRecovered = 0;
-  connection
-    .find({}, (err, data) => {
-      if (err) {
-        res.send(err);
-        return;
-      } else {
-        data.forEach((element) => {
-          totalRecovered += element.recovered;
-        });
-      }
-    })
-    .then((result) =>
-      res.send({ data: { _id: "total", recovered: totalRecovered } })
-    )
-    .catch((err) => res.send(err));
-});
-app.get("/totalActive", (req, res) => {
-  let totalRecovered = 0;
-  connection
-    .find({}, (err, data) => {
-      if (err) {
-        res.send(err);
-        return;
-      } else {
-        data.forEach((element) => {
-          totalRecovered += element.infected - element.recovered;
-        });
-      }
-    })
-    .then((result) =>
-      res.send({ data: { _id: "total", active: totalRecovered } })
-    )
-    .catch((err) => res.send(err));
-});
+const { connection } = require('./connector')
 
-app.get("/totalDeath", (req, res) => {
-  let totalRecovered = 0;
-  connection
-    .find({}, (err, data) => {
-      if (err) {
-        res.send(err);
-        return;
-      } else {
-        data.forEach((element) => {
-          totalRecovered += element.death;
-        });
-      }
-    })
-    .then((result) =>
-      res.send({ data: { _id: "total", death: totalRecovered } })
-    )
-    .catch((err) => res.send(err));
-});
 
-app.get("/hotspotStates", (req, res) => {
-  let totalRecovered = 0;
-  let hotspotData = [];
-  connection
-    .find({}, (err, data) => {
-      if (err) {
-        res.send(err);
-        return;
-      } else {
-        hotspotData = [];
-        for (let i = 0; i < data.length; i++) {
-          let rate = (data[i].infected - data[i].recovered) / data[i].infected;
-          rate = rate.toFixed(5);
-          if (rate > 0.1) {
-            hotspotData.push({ state: data[i].state, rate: rate });
-          }
+
+app.get('/totalRecovered',(req,res) => {
+    connection.aggregate(([
+        {$group:
+                {_id: null,
+                    totalRecovered: { $sum:"$recovered"}
+                }
         }
 
-        return hotspotData;
-      }
-    })
-    .then(() => res.send(hotspotData))
-    .catch((err) => res.send(err));
-});
+    ]))
+        .then((result,rej)=>{
 
-app.get("/healthyStates", (req, res) => {
-  let totalRecovered = 0;
-  let hotspotData = [];
-  connection
-    .find({}, (err, data) => {
-      if (err) {
-        res.send(err);
-        return;
-      } else {
-        hotspotData = [];
-        for (let i = 0; i < data.length; i++) {
-          let rate = data[i].death / data[i].infected;
-          rate = rate.toFixed(5);
-          if (rate < 0.005) {
-            hotspotData.push({ state: data[i].state, mortality: rate });
-          }
+            let response = {
+                "data":
+                    {
+                        "_id":"total",
+                        "recovered" : result[0].totalRecovered
+                    }
+            }
+
+            res.json(response);
+        })
+        .catch((err)=>{
+            res.status(404).send(err);
+        })
+
+})
+
+app.get('/totalActive',(req,res) => {
+
+    connection.aggregate(([
+        {$group:
+                {
+                    _id: null,
+                    totalActive: {$sum:{$subtract:["$infected","$recovered"]}}}
+
         }
+    ]))
+        .then((result,rej)=>{
 
-        return hotspotData;
-      }
-    })
-    .then(() => res.send(hotspotData))
-    .catch((err) => res.send(err));
-});
+            let response = {
+                "data":
+                    {
+                        "_id":"total",
+                        "active" : result[0].totalActive
+                    }
+            }
 
-app.listen(port, () => console.log(`App listening on port ${port}!`));
+
+            res.json(response);
+        })
+        .catch((err)=>{
+            res.status(404).send(err);
+        })
+
+
+})
+
+app.get('/totalDeath',(req,res) => {
+    connection.aggregate(([
+        {$group:
+                {
+                    _id:null,
+                    totalDeath: {$sum : "$death"} }
+
+        }
+    ]))
+        .then((result,rej)=>{
+
+            // let totalDeath = result.reduce((result,death)=>{
+            //     return result + death.total;
+            // },0);
+            let response = {
+                "data":
+                    {
+                        "_id":"total",
+                        "death" : result[0].totalDeath
+                    }
+            }
+
+            res.json(response);
+        })
+        .catch((err)=>{
+            res.status(404).send(err);
+        })
+
+})
+
+app.get('/hotspotStates',(req,res) => {
+
+    connection.aggregate(([
+        {$project:
+
+                {
+                    state : 1,
+                    rate:
+                        { $round :
+                                [{ $divide:
+                                        [ {$subtract: ["$infected","$recovered"]}, "$infected" ]
+                                },5]
+                        }
+                }
+
+        },
+        {
+            $match: { rate: {$gt : 0.1} }
+        }
+    ]))
+        .then((result,rej)=>{
+            console.log(result);
+            let hotspots = result.map((hotspot)=>{
+                return {"state": hotspot.state,"rate": hotspot.rate}
+            })
+            let response = {
+                "data": hotspots
+            }
+
+            res.json(response);
+        })
+        .catch((err)=>{
+            res.status(404).send(err);
+        })
+
+})
+
+
+app.get('/healthyStates',(req,res) => {
+
+    connection.aggregate(([
+        {$project:
+
+                {state : 1,
+                    mortality:
+                        { $round :
+                                [
+                                    { $divide:[ "$death","$infected" ] },5
+                                ]
+                        }
+                }
+
+        },{
+            $match: { mortality: {$lt : 0.005} }
+        }
+    ]))
+        .then((result,rej)=>{
+
+            let healthyStates = result.map((healthyState)=>{
+                return {"state": healthyState.state,"mortality": healthyState.mortality}
+            })
+            let response = {
+                "data": healthyStates
+            }
+
+            res.json(response);
+        })
+        .catch((err)=>{
+            res.status(404).send(err);
+        })
+
+})
+
+app.listen(port, () => console.log(`App listening on port ${port}!`))
 
 module.exports = app;
